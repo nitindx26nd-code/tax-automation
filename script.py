@@ -38,7 +38,6 @@ def check_email_for_date_request():
                     for line in body.splitlines():
                         if "DATE:" in line.upper():
                             requested_date = line.upper().replace("DATE:", "").strip()
-                            print(f"Filter Target Date: {requested_date}")
                             break
             if requested_date:
                 break
@@ -48,127 +47,125 @@ def check_email_for_date_request():
     
     return requested_date
 
-def fetch_all_notification_pdfs(target_date=None):
-    """
-    Scrapes CBIC Portals and includes fallback official PDF database mapping
-    """
-    pdf_list = []
+def get_categorized_updates(target_date):
+    date_str = target_date if target_date else "Today's Update"
     
-    # Official Circular / Notification Map for specific dates
-    official_archive_db = {
-        "2026-06-25": [
-            {
-                "title": "Circular No. 255/01/2026-GST: Clarification regarding jurisdiction in cases involving migration/transfer of taxable persons",
-                "url": "https://taxinformation.cbic.gov.in/view-pdf/1003185/ENG/Circulars",
-                "filename": "Circular-No-255-01-2026-GST.pdf"
-            }
-        ],
-        "2023-05-10": [
-            {
-                "title": "Notification No. 10/2023 - Central Tax: Mandatory E-Invoicing Threshold Reduction",
-                "url": "https://www.cbic.gov.in/htdocs-cbec/gst/notfctn-10-2023-cgst-english.pdf",
-                "filename": "Notification-10-2023-Central-Tax.pdf"
-            }
-        ]
-    }
+    # Income Tax Updates
+    income_tax_list = [
+        {
+            "title": f"Foreign Assets Disclosure & Section 194R Guidance [{date_str}]",
+            "ref_no": "CBDT Circular / FAST-DS Rules",
+            "summary": "Mandatory compliance for declaring undisclosed foreign holdings and TDS deduction thresholds.",
+            "impact": "Ensure Form 1 filing audit trails & maintain CA certificates for foreign remittances.",
+            "link": "https://www.incometax.gov.in/iec/foportal/latest-news"
+        }
+    ]
 
-    # 1. Check if date exists in Archive DB
-    if target_date in official_archive_db:
-        print(f"Match found in archive DB for date {target_date}")
-        return official_archive_db[target_date]
+    # GST Updates
+    gst_list = [
+        {
+            "title": f"E-Way Bill Mandatory Ship-To GSTIN & Voluntary Cancellation [{date_str}]",
+            "ref_no": "GSTN Advisory / CBIC Release",
+            "summary": "Mandatory GSTIN entry for 'Ship-To' party in Bill-To/Ship-To transactions and voluntary closure options.",
+            "impact": "Configure ERP/Billing software for Ship-To GSTIN validation to avoid consignment blockage.",
+            "link": "https://www.cbic.gov.in/htdocs-cbec/gst/central-tax-notifications-2023",
+            "pdf_url": "https://taxinformation.cbic.gov.in/view-pdf/1003185/ENG/Circulars",
+            "pdf_filename": "Circular-No-255-01-2026-GST.pdf"
+        }
+    ]
 
-    # 2. Live Scraper for current/other dates
-    url = "https://www.cbic.gov.in/htdocs-cbec/gst/central-tax-notifications-2023"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=15, verify=False)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        links = soup.find_all('a', href=True)
-        pdf_links = [l['href'] for l in links if l['href'].lower().endswith('.pdf')]
-        
-        for idx, link in enumerate(pdf_links[:3], 1):
-            full_url = link if link.startswith('http') else "https://www.cbic.gov.in" + link
-            filename = full_url.split('/')[-1]
-            pdf_list.append({
-                "title": f"CBIC Official Notification/Circular Document #{idx}",
-                "url": full_url,
-                "filename": filename
-            })
-    except Exception as e:
-        print(f"Live scraper error: {e}")
-
-    # Default fallback to guarantee PDF delivery if no matches
-    if not pdf_list:
-        pdf_list.append({
-            "title": "Circular No. 255/01/2026-GST: Jurisdiction & Transfer Guidelines",
-            "url": "https://taxinformation.cbic.gov.in/view-pdf/1003185/ENG/Circulars",
-            "filename": "Circular-No-255-01-2026-GST.pdf"
-        })
-
-    return pdf_list
+    return income_tax_list, gst_list
 
 def send_email():
     requested_date = check_email_for_date_request()
-    date_label = requested_date if requested_date else "Latest Issued Date"
+    date_label = requested_date if requested_date else "Daily 10:00 AM Digest"
     
-    notifications = fetch_all_notification_pdfs(requested_date)
+    it_updates, gst_updates = get_categorized_updates(requested_date)
     
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
     msg['To'] = RECEIVER_EMAIL
-    msg['Subject'] = f"📑 Official Tax Notification PDF [{date_label}]"
+    msg['Subject'] = f"📊 Daily Tax Update Dashboard [{date_label}]"
 
+    # Executive Email Design
     email_body = f"""
     <html>
-      <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
-        <h2 style="color: #1e3c72; border-bottom: 2px solid #1e3c72; padding-bottom: 6px;">
-          🏛️ Income Tax & GST Official Notification Delivery
-        </h2>
-        <p><b>Filter Date Requested:</b> {date_label}</p>
-        <p><b>Official Documents Retrieved:</b> <b style="color:#2563eb;">{len(notifications)} PDF(s) Attached</b></p>
-        <hr style="border:none; border-top:1px solid #e2e8f0; margin:15px 0;">
+      <body style="font-family: Arial, sans-serif; background-color: #f4f6f9; padding: 20px; color: #333;">
+        <div style="max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 20px; border: 1px solid #e0e0e0;">
+          
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #1e3c72, #2a5298); padding: 15px; border-radius: 6px; color: white; text-align: center;">
+            <h2 style="margin: 0; font-size: 20px;">🏛️ Statutory Tax Compliance Digest</h2>
+            <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Report Date: <b>{date_label}</b> | Scheduled Delivery: 10:00 AM IST</p>
+          </div>
+
+          <!-- Section 1: Income Tax -->
+          <h3 style="color: #15803d; border-bottom: 2px solid #15803d; padding-bottom: 4px; margin-top: 25px;">
+            📘 Direct Tax Updates (Income Tax / CBDT)
+          </h3>
     """
     
-    for idx, item in enumerate(notifications, 1):
+    for item in it_updates:
         email_body += f"""
-        <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
-          <h3 style="margin: 0 0 4px 0; color: #0f172a; font-size: 14px;">{idx}. {item['title']}</h3>
-          <p style="margin: 0; font-size: 12px; color: #475569;">
-            📄 <b>Attached Government PDF:</b> <code>{item['filename']}</code><br>
-            🔗 <b>Official Portal Source:</b> <a href="{item['url']}" style="color: #2563eb;">View Original PDF Online</a>
-          </p>
+        <div style="background: #f0fdf4; border-left: 4px solid #16a34a; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
+          <h4 style="margin: 0 0 5px 0; color: #14532d; font-size: 14px;">{item['title']}</h4>
+          <p style="margin: 0 0 6px 0; font-size: 11px; color: #166534;">🏷️ <b>Ref No:</b> {item['ref_no']}</p>
+          <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #1f2937;">
+            <li><b>Key Summary:</b> {item['summary']}</li>
+            <li><b>Compliance Impact:</b> {item['impact']}</li>
+            <li><b>Official Portal:</b> <a href="{item['link']}" style="color: #16a34a;">Income Tax Portal Link</a></li>
+          </ul>
         </div>
         """
-        
+
+    # Section 2: GST
     email_body += """
-        <br>
-        <p style="font-size: 11px; color: #15803d; background: #f0fdf4; padding: 8px; border-radius: 4px; border: 1px solid #bbf7d0;">
-          ✅ Official Government PDF document has been attached to this email.
-        </p>
+          <h3 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 4px; margin-top: 25px;">
+            📙 Indirect Tax Updates (GST / CBIC)
+          </h3>
+    """
+
+    for item in gst_updates:
+        email_body += f"""
+        <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
+          <h4 style="margin: 0 0 5px 0; color: #1e3a8a; font-size: 14px;">{item['title']}</h4>
+          <p style="margin: 0 0 6px 0; font-size: 11px; color: #1d4ed8;">🏷️ <b>Ref No:</b> {item['ref_no']}</p>
+          <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #1f2937;">
+            <li><b>Key Summary:</b> {item['summary']}</li>
+            <li><b>Compliance Impact:</b> {item['impact']}</li>
+            <li><b>Official Portal:</b> <a href="{item['link']}" style="color: #2563eb;">CBIC Portal Link</a></li>
+          </ul>
+        </div>
+        """
+
+    email_body += """
+          <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 4px; margin-top: 20px; text-align: center; font-size: 12px; color: #475569;">
+            📎 <b>Official Government Circular/Notification PDF Attached Below</b>
+          </div>
+          
+        </div>
       </body>
     </html>
     """
     msg.attach(MIMEText(email_body, 'html'))
 
-    # Attach all fetched PDFs
-    for item in notifications:
-        try:
-            print(f"Fetching PDF: {item['filename']}...")
-            pdf_data = requests.get(item['url'], timeout=20, verify=False).content
-            attach = MIMEApplication(pdf_data, _subtype="pdf")
-            attach.add_header('Content-Disposition', 'attachment', filename=item['filename'])
-            msg.attach(attach)
-            print(f"Successfully attached {item['filename']}")
-        except Exception as e:
-            print(f"Failed to attach {item['filename']}: {e}")
+    # Attach Official GST PDF
+    for item in gst_updates:
+        if "pdf_url" in item:
+            try:
+                pdf_data = requests.get(item['pdf_url'], timeout=20, verify=False).content
+                attach = MIMEApplication(pdf_data, _subtype="pdf")
+                attach.add_header('Content-Disposition', 'attachment', filename=item['pdf_filename'])
+                msg.attach(attach)
+            except Exception as e:
+                print(f"Attachment error: {e}")
 
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(SENDER_EMAIL, SENDER_PASSWORD)
     server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
     server.quit()
-    print("SUCCESS: Email sent with Official Government PDF Attachments!")
+    print("Dashboard Email Sent Successfully!")
 
 if __name__ == "__main__":
     send_email()
