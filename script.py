@@ -4,19 +4,18 @@ import imaplib
 import email
 import requests
 import urllib3
+from datetime import datetime
 from bs4 import BeautifulSoup
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
-# Suppress SSL Warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 RECEIVER_EMAIL_RAW = os.environ.get("RECEIVER_EMAIL", "")
 
-# Parse Multiple Receivers safely
 RECEIVER_LIST = [e.strip() for e in RECEIVER_EMAIL_RAW.replace(";", ",").split(",") if e.strip()]
 
 def check_email_for_date_request():
@@ -26,10 +25,10 @@ def check_email_for_date_request():
         mail.login(SENDER_EMAIL, SENDER_PASSWORD)
         mail.select("inbox")
 
-        status, messages = mail.search(None, 'ALL')
+        status, messages = mail.search(None, 'UNSEEN')
         email_ids = messages[0].split()
 
-        for e_id in email_ids[::-1][:10]:
+        for e_id in email_ids[::-1]:
             _, msg_data = mail.fetch(e_id, '(RFC822)')
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
@@ -45,6 +44,8 @@ def check_email_for_date_request():
                     for line in body.splitlines():
                         if "DATE:" in line.upper():
                             requested_date = line.upper().replace("DATE:", "").strip()
+                            mail.store(e_id, '+FLAGS', '\\Seen')
+                            print(f"New Unread Date Requested: {requested_date}")
                             break
             if requested_date:
                 break
@@ -55,31 +56,36 @@ def check_email_for_date_request():
     return requested_date
 
 def get_categorized_updates(target_date):
-    date_str = target_date if target_date else "Today's Update"
+    current_today = datetime.now().strftime("%Y-%m-%d")
+    date_str = target_date if target_date else current_today
     
+    # Income Tax (CBDT) Entry + PDF
     income_tax_list = [
         {
-            "title": f"Foreign Assets Disclosure & Section 194R Guidance [{date_str}]",
+            "title": f"Foreign Assets Disclosure & Statutory TDS Updates [{date_str}]",
             "ref_no": "CBDT Circular / FAST-DS Rules",
-            "summary": "Mandatory compliance for declaring undisclosed foreign holdings and TDS deduction thresholds.",
-            "impact": "Ensure Form 1 filing audit trails & maintain CA certificates for foreign remittances.",
-            "link": "https://www.incometax.gov.in/iec/foportal/latest-news"
+            "summary": "Mandatory compliance for declaring foreign holdings and Section 194R TDS thresholds.",
+            "impact": "Ensure Form 1 audit trails & maintain CA certificates for foreign remittances.",
+            "link": "https://www.incometax.gov.in/iec/foportal/latest-news",
+            "pdf_url": "https://www.incometaxindia.gov.in/communications/circular/circular-01-2024.pdf",
+            "pdf_filename": "Income_Tax_CBDT_Circular.pdf"
         }
     ]
 
+    # GST (CBIC) Entry + PDF
     gst_list = [
         {
-            "title": f"E-Way Bill Mandatory Ship-To GSTIN & Voluntary Cancellation [{date_str}]",
+            "title": f"E-Way Bill Ship-To GSTIN Rules & Portal Advisory [{date_str}]",
             "ref_no": "GSTN Advisory / CBIC Release",
-            "summary": "Mandatory GSTIN entry for 'Ship-To' party in Bill-To/Ship-To transactions and voluntary closure options.",
+            "summary": "Mandatory active GSTIN requirement for Ship-To party in multi-party billing & voluntary cancellation.",
             "impact": "Configure ERP/Billing software for Ship-To GSTIN validation to avoid consignment blockage.",
             "link": "https://www.cbic.gov.in/htdocs-cbec/gst/central-tax-notifications-2023",
             "pdf_url": "https://taxinformation.cbic.gov.in/view-pdf/1003185/ENG/Circulars",
-            "pdf_filename": "Circular-No-255-01-2026-GST.pdf"
+            "pdf_filename": "GST_CBIC_Circular.pdf"
         }
     ]
 
-    return income_tax_list, gst_list
+    return income_tax_list, gst_list, date_str
 
 def send_email():
     if not RECEIVER_LIST:
@@ -87,14 +93,16 @@ def send_email():
         return
 
     requested_date = check_email_for_date_request()
-    date_label = requested_date if requested_date else "Daily 10:00 AM Digest"
-    
-    it_updates, gst_updates = get_categorized_updates(requested_date)
+    it_updates, gst_updates, display_date = get_categorized_updates(requested_date)
     
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
     msg['To'] = ", ".join(RECEIVER_LIST)
-    msg['Subject'] = f"📊 Daily Tax Update Dashboard [{date_label}]"
+    
+    if requested_date:
+        msg['Subject'] = f"📊 Requested Tax Report [{requested_date}]"
+    else:
+        msg['Subject'] = f"📊 Daily Tax Update Dashboard [{display_date}]"
 
     email_body = f"""
     <html>
@@ -103,9 +111,10 @@ def send_email():
           
           <div style="background: linear-gradient(135deg, #1e3c72, #2a5298); padding: 15px; border-radius: 6px; color: white; text-align: center;">
             <h2 style="margin: 0; font-size: 20px;">🏛️ Statutory Tax Compliance Digest</h2>
-            <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Report Date: <b>{date_label}</b> | Scheduled Delivery: 10:00 AM IST</p>
+            <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Report Date: <b>{display_date}</b> | Scheduled Delivery: 10:00 AM IST</p>
           </div>
 
+          <!-- Direct Tax Section -->
           <h3 style="color: #15803d; border-bottom: 2px solid #15803d; padding-bottom: 4px; margin-top: 25px;">
             📘 Direct Tax Updates (Income Tax / CBDT)
           </h3>
@@ -124,6 +133,7 @@ def send_email():
         </div>
         """
 
+    # Indirect Tax Section
     email_body += """
           <h3 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 4px; margin-top: 25px;">
             📙 Indirect Tax Updates (GST / CBIC)
@@ -145,7 +155,7 @@ def send_email():
 
     email_body += """
           <div style="background: #f8fafc; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 4px; margin-top: 20px; text-align: center; font-size: 12px; color: #475569;">
-            📎 <b>Official Government Circular/Notification PDF Attached Below</b>
+            📎 <b>Official Income Tax & GST Government PDFs Attached Below</b>
           </div>
           
         </div>
@@ -154,22 +164,26 @@ def send_email():
     """
     msg.attach(MIMEText(email_body, 'html'))
 
-    for item in gst_updates:
+    # Combined Attachment Loop for BOTH Income Tax and GST
+    all_updates = it_updates + gst_updates
+    for item in all_updates:
         if "pdf_url" in item:
             try:
+                print(f"Downloading PDF: {item['pdf_filename']}...")
                 pdf_data = requests.get(item['pdf_url'], timeout=20, verify=False).content
                 attach = MIMEApplication(pdf_data, _subtype="pdf")
                 attach.add_header('Content-Disposition', 'attachment', filename=item['pdf_filename'])
                 msg.attach(attach)
+                print(f"Successfully attached {item['pdf_filename']}")
             except Exception as e:
-                print(f"Attachment error: {e}")
+                print(f"Attachment error for {item['pdf_filename']}: {e}")
 
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(SENDER_EMAIL, SENDER_PASSWORD)
     server.sendmail(SENDER_EMAIL, RECEIVER_LIST, msg.as_string())
     server.quit()
-    print(f"Dashboard Email Sent Successfully to: {RECEIVER_LIST}")
+    print(f"Dashboard Email Sent Successfully with ALL PDF Attachments!")
 
 if __name__ == "__main__":
     send_email()
