@@ -1,4 +1,5 @@
 import os
+import re
 import smtplib
 import imaplib
 import email
@@ -22,6 +23,10 @@ RECEIVER_EMAIL_RAW = os.environ.get("RECEIVER_EMAIL", "")
 RECEIVER_LIST = [e.strip() for e in RECEIVER_EMAIL_RAW.replace(";", ",").split(",") if e.strip()]
 
 def check_email_for_date_request():
+    """
+    Strictly extracts YYYY-MM-DD or DD-MM-YYYY dates from email replies.
+    Ignores generic order dates or random email text.
+    """
     requested_date = None
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
@@ -48,12 +53,16 @@ def check_email_for_date_request():
                         if payload:
                             body = payload.decode('utf-8', errors='ignore')
 
+                    # Strict Regex for YYYY-MM-DD or DD-MM-YYYY explicitly after 'DATE:'
                     for line in body.splitlines():
                         if "DATE:" in line.upper():
-                            requested_date = line.upper().replace("DATE:", "").strip()
-                            mail.store(e_id, '+FLAGS', '\\Seen')
-                            print(f"New Unread Date Requested: {requested_date}")
-                            break
+                            # Extract pattern like 2026-06-25 or 25-06-2026
+                            match = re.search(r'\b(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})\b', line)
+                            if match:
+                                requested_date = match.group(1)
+                                mail.store(e_id, '+FLAGS', '\\Seen')
+                                print(f"Valid Requested Date Detected: {requested_date}")
+                                break
             if requested_date:
                 break
         mail.logout()
@@ -63,9 +72,6 @@ def check_email_for_date_request():
     return requested_date
 
 def build_official_gst_circular_pdf(filename, date_str):
-    """
-    Renders EXACT Government of India Gazette / Circular Document Layout
-    """
     doc = SimpleDocTemplate(filename, pagesize=A4, rightMargin=45, leftMargin=45, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
     story = []
@@ -116,9 +122,6 @@ def build_official_gst_circular_pdf(filename, date_str):
     doc.build(story)
 
 def build_official_cbdt_notification_pdf(filename, date_str):
-    """
-    Renders Official Income Tax / CBDT Notification Format
-    """
     doc = SimpleDocTemplate(filename, pagesize=A4, rightMargin=45, leftMargin=45, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
     story = []
@@ -234,7 +237,7 @@ def send_email():
     server.login(SENDER_EMAIL, SENDER_PASSWORD)
     server.sendmail(SENDER_EMAIL, RECEIVER_LIST, msg.as_string())
     server.quit()
-    print("SUCCESS: Sent Official Ministry Gazette & Circular Documents!")
+    print(f"SUCCESS: Sent Official Ministry Gazette & Circular Documents for Date: {display_date}")
 
 if __name__ == "__main__":
     send_email()
