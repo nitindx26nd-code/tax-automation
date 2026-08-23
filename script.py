@@ -3,14 +3,21 @@ import smtplib
 import imaplib
 import email
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
+# Suppress SSL Warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
-RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+RECEIVER_EMAIL_RAW = os.environ.get("RECEIVER_EMAIL", "")
+
+# Parse Multiple Receivers safely
+RECEIVER_LIST = [e.strip() for e in RECEIVER_EMAIL_RAW.replace(";", ",").split(",") if e.strip()]
 
 def check_email_for_date_request():
     requested_date = None
@@ -50,7 +57,6 @@ def check_email_for_date_request():
 def get_categorized_updates(target_date):
     date_str = target_date if target_date else "Today's Update"
     
-    # Income Tax Updates
     income_tax_list = [
         {
             "title": f"Foreign Assets Disclosure & Section 194R Guidance [{date_str}]",
@@ -61,7 +67,6 @@ def get_categorized_updates(target_date):
         }
     ]
 
-    # GST Updates
     gst_list = [
         {
             "title": f"E-Way Bill Mandatory Ship-To GSTIN & Voluntary Cancellation [{date_str}]",
@@ -77,6 +82,10 @@ def get_categorized_updates(target_date):
     return income_tax_list, gst_list
 
 def send_email():
+    if not RECEIVER_LIST:
+        print("ERROR: No valid receiver email found in secrets!")
+        return
+
     requested_date = check_email_for_date_request()
     date_label = requested_date if requested_date else "Daily 10:00 AM Digest"
     
@@ -84,22 +93,19 @@ def send_email():
     
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
-    msg['To'] = RECEIVER_EMAIL
+    msg['To'] = ", ".join(RECEIVER_LIST)
     msg['Subject'] = f"📊 Daily Tax Update Dashboard [{date_label}]"
 
-    # Executive Email Design
     email_body = f"""
     <html>
       <body style="font-family: Arial, sans-serif; background-color: #f4f6f9; padding: 20px; color: #333;">
         <div style="max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 20px; border: 1px solid #e0e0e0;">
           
-          <!-- Header -->
           <div style="background: linear-gradient(135deg, #1e3c72, #2a5298); padding: 15px; border-radius: 6px; color: white; text-align: center;">
             <h2 style="margin: 0; font-size: 20px;">🏛️ Statutory Tax Compliance Digest</h2>
             <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Report Date: <b>{date_label}</b> | Scheduled Delivery: 10:00 AM IST</p>
           </div>
 
-          <!-- Section 1: Income Tax -->
           <h3 style="color: #15803d; border-bottom: 2px solid #15803d; padding-bottom: 4px; margin-top: 25px;">
             📘 Direct Tax Updates (Income Tax / CBDT)
           </h3>
@@ -118,7 +124,6 @@ def send_email():
         </div>
         """
 
-    # Section 2: GST
     email_body += """
           <h3 style="color: #1e40af; border-bottom: 2px solid #1e40af; padding-bottom: 4px; margin-top: 25px;">
             📙 Indirect Tax Updates (GST / CBIC)
@@ -149,7 +154,6 @@ def send_email():
     """
     msg.attach(MIMEText(email_body, 'html'))
 
-    # Attach Official GST PDF
     for item in gst_updates:
         if "pdf_url" in item:
             try:
@@ -163,9 +167,9 @@ def send_email():
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(SENDER_EMAIL, SENDER_PASSWORD)
-    server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+    server.sendmail(SENDER_EMAIL, RECEIVER_LIST, msg.as_string())
     server.quit()
-    print("Dashboard Email Sent Successfully!")
+    print(f"Dashboard Email Sent Successfully to: {RECEIVER_LIST}")
 
 if __name__ == "__main__":
     send_email()
