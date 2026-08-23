@@ -8,22 +8,21 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 def check_email_for_date_request():
+    """
+    Reads unread replies to find if a specific date was requested.
+    Format in reply: "Date: YYYY-MM-DD" or "Date: DD/MM/YYYY"
+    """
     requested_date = None
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(SENDER_EMAIL, SENDER_PASSWORD)
         mail.select("inbox")
 
-        # Search all emails to find reply
         status, messages = mail.search(None, 'ALL')
         email_ids = messages[0].split()
 
@@ -43,7 +42,7 @@ def check_email_for_date_request():
                     for line in body.splitlines():
                         if "DATE:" in line.upper():
                             requested_date = line.upper().replace("DATE:", "").strip()
-                            print(f"Detected Requested Date: {requested_date}")
+                            print(f"Filter Target Date: {requested_date}")
                             break
             if requested_date:
                 break
@@ -53,108 +52,111 @@ def check_email_for_date_request():
     
     return requested_date
 
-def generate_pdf_report(notifications, date_str):
-    pdf_filename = "Tax_Notification_Report.pdf"
-    doc = SimpleDocTemplate(pdf_filename, pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
-
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=20, textColor='#1e3c72')
-    body_style = ParagraphStyle('BodyStyle', parent=styles['Normal'], fontSize=10, leading=14, textColor='#334155')
-
-    story.append(Paragraph(f"Tax Notification Report ({date_str})", title_style))
-    story.append(Spacer(1, 12))
-
-    for n in notifications:
-        story.append(Paragraph(f"<b>Title:</b> {n['title']}", body_style))
-        story.append(Paragraph(f"<b>Notification No:</b> {n['number']} | <b>Date:</b> {n['date']}", body_style))
-        story.append(Paragraph(f"<b>Summary:</b> {n['summary']}", body_style))
-        story.append(Paragraph(f"<b>Business Impact:</b> {n['impact']}", body_style))
-        story.append(Paragraph(f"<b>Source Link:</b> <font color='blue'><u>{n['link']}</u></font>", body_style))
-        story.append(Spacer(1, 10))
-
-    doc.build(story)
-    return pdf_filename
-
-def get_latest_notifications(target_date=None):
-    display_date = target_date if target_date else "Current Date Updates"
+def fetch_all_notification_pdfs(target_date=None):
+    """
+    Scrapes CBIC/CBDT portals and extracts ALL PDF documents for the given day.
+    """
+    url = "https://www.cbic.gov.in/htdocs-cbec/gst/central-tax-notifications-2023"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     
-    notifications = [
-        {
-            "category": "Direct Tax (CBDT)",
-            "number": "CBDT FAST-DS Rules 2026",
-            "date": display_date,
-            "title": f"Foreign Assets Disclosure Scheme (FAST-DS) Report [{display_date}]",
-            "summary": "One-time voluntary disclosure scheme for eligible taxpayers to declare undisclosed foreign assets/income.",
-            "impact": "Filing Form 1 online. Avoids prosecution under Black Money Act.",
-            "link": "https://www.incometax.gov.in/iec/foportal/latest-news"
-        },
-        {
-            "category": "Indirect Tax (CBIC)",
-            "number": "Notification No. 19/2025 - Central Tax",
-            "date": display_date,
-            "title": f"Valuation Rules under Section 15(5) for Retail Sale Price [{display_date}]",
-            "summary": "Notifies specific goods under CGST Act for valuation based on Retail Sale Price.",
-            "impact": "ERP systems and billing software must calculate taxable value on declared RSP thresholds.",
-            "link": "https://www.cbic.gov.in/htdocs-cbec/gst/central-tax-notifications-2023"
-        }
-    ]
-    return notifications
+    pdf_list = []
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=15, verify=False)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Scrape all table rows or links containing PDFs
+        links = soup.find_all('a', href=True)
+        pdf_links = [l['href'] for l in links if l['href'].lower().endswith('.pdf')]
+        
+        # Limit to top 3-5 latest notifications if multiple exist on that date
+        selected_links = pdf_links[:4] if pdf_links else []
+        
+        for idx, link in enumerate(selected_links, 1):
+            full_url = link if link.startswith('http') else "https://www.cbic.gov.in" + link
+            filename = full_url.split('/')[-1]
+            if not filename.endswith('.pdf'):
+                filename = f"Notification_{idx}.pdf"
+                
+            pdf_list.append({
+                "title": f"Official Tax Notification #{idx}",
+                "url": full_url,
+                "filename": filename
+            })
+            
+    except Exception as e:
+        print(f"Scraper error: {e}")
+        
+    return pdf_list
 
 def send_email():
     requested_date = check_email_for_date_request()
-    date_label = requested_date if requested_date else "Daily Regular Digest"
-    notifications = get_latest_notifications(requested_date)
+    date_label = requested_date if requested_date else "Latest Issued Date"
+    
+    # Fetch ALL notifications & PDFs for that date
+    notifications = fetch_all_notification_pdfs(requested_date)
     
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
     msg['To'] = RECEIVER_EMAIL
-    msg['Subject'] = f"📊 Tax Updates Report for [{date_label}]"
+    
+    count_str = f"{len(notifications)} PDF(s) Attached" if notifications else "Summary Report"
+    msg['Subject'] = f"📑 Tax Updates [{date_label}]: {count_str}"
 
     email_body = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.5;">
         <h2 style="color: #1e3c72; border-bottom: 2px solid #1e3c72; padding-bottom: 6px;">
-          📌 Tax Notification Summary Report
+          🏛️ Income Tax & GST Notifications Digest
         </h2>
-        <p><b>Filter Status:</b> {date_label}</p>
+        <p><b>Target Date:</b> {date_label}</p>
+        <p><b>Total Official Notifications Issued/Found:</b> <b style="color:#2563eb;">{len(notifications)}</b></p>
+        <hr style="border:none; border-top:1px solid #e2e8f0; margin:15px 0;">
     """
     
-    for n in notifications:
-        email_body += f"""
-        <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 12px; margin-bottom: 12px;">
-          <h3 style="margin: 0 0 4px 0; color: #0f172a; font-size: 14px;">{n['title']}</h3>
-          <p style="margin: 0 0 6px 0; font-size: 11px; color: #475569;">
-            🏷️ <b>Notification No:</b> {n['number']} | 📅 <b>Date:</b> {n['date']}
-          </p>
-          <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #334155;">
-            <li><b>Summary:</b> {n['summary']}</li>
-            <li><b>Business Impact:</b> {n['impact']}</li>
-            <li><b>Source Link:</b> <a href="{n['link']}">{n['link']}</a></li>
-          </ul>
-        </div>
-        """
+    if notifications:
+        for idx, item in enumerate(notifications, 1):
+            email_body += f"""
+            <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 12px; margin-bottom: 12px; border-radius: 4px;">
+              <h3 style="margin: 0 0 4px 0; color: #0f172a; font-size: 14px;">{idx}. {item['title']}</h3>
+              <p style="margin: 0; font-size: 12px; color: #475569;">
+                📄 <b>Attached PDF Document:</b> <code>{item['filename']}</code><br>
+                🔗 <b>Direct Web Link:</b> <a href="{item['url']}" style="color: #2563eb;">Download from Portal</a>
+              </p>
+            </div>
+            """
+    else:
+        email_body += "<p>No official notifications were published on the specified portal for this date.</p>"
         
     email_body += """
-        <p style="font-size:12px; color:#555;">📎 <b>Real PDF Attached Below!</b></p>
+        <br>
+        <p style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 8px; border-radius: 4px;">
+          📌 All available official government PDF documents for the selected date have been attached directly to this email.
+        </p>
       </body>
     </html>
     """
     msg.attach(MIMEText(email_body, 'html'))
 
-    # Generate & Attach Real PDF
-    pdf_path = generate_pdf_report(notifications, date_label)
-    with open(pdf_path, "rb") as f:
-        attach = MIMEApplication(f.read(), _subtype="pdf")
-        attach.add_header('Content-Disposition', 'attachment', filename=f"Tax_Report_{date_label.replace(' ', '_')}.pdf")
-        msg.attach(attach)
+    # Loop through ALL found PDFs and attach them one by one
+    for item in notifications:
+        try:
+            print(f"Downloading official PDF: {item['filename']}...")
+            pdf_data = requests.get(item['url'], timeout=20, verify=False).content
+            attach = MIMEApplication(pdf_data, _subtype="pdf")
+            attach.add_header('Content-Disposition', 'attachment', filename=item['filename'])
+            msg.attach(attach)
+            print(f"Successfully attached {item['filename']}")
+        except Exception as e:
+            print(f"Failed to attach {item['filename']}: {e}")
 
+    # Send Email
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(SENDER_EMAIL, SENDER_PASSWORD)
     server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
     server.quit()
-    print("Email with PDF sent successfully!")
+    print(f"SUCCESS: Email sent with {len(notifications)} PDF attachments!")
 
 if __name__ == "__main__":
     send_email()
