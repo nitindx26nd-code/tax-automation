@@ -2,7 +2,7 @@ name: Daily Tax Updates Script
 
 on:
   schedule:
-    - cron: '30 4 * * *'  # Runs Daily at 10:00 AM IST
+    - cron: '30 4 * * *'  # Scheduled for 10:00 AM IST daily
   workflow_dispatch:
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4
+          pip install requests beautifulsoup4 reportlab urllib3
 
       - name: Run Tax Script
         env:
