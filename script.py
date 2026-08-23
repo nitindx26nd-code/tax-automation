@@ -9,7 +9,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -40,9 +40,13 @@ def check_email_for_date_request():
                     if msg.is_multipart():
                         for part in msg.walk():
                             if part.get_content_type() == "text/plain":
-                                body += part.get_payload(decode=True).decode()
+                                payload = part.get_payload(decode=True)
+                                if payload:
+                                    body += payload.decode('utf-8', errors='ignore')
                     else:
-                        body = msg.get_payload(decode=True).decode()
+                        payload = msg.get_payload(decode=True)
+                        if payload:
+                            body = payload.decode('utf-8', errors='ignore')
 
                     for line in body.splitlines():
                         if "DATE:" in line.upper():
@@ -66,12 +70,11 @@ def build_official_gst_circular_pdf(filename, date_str):
     styles = getSampleStyleSheet()
     story = []
 
-    center_header = ParagraphStyle('CenterHeader', parent=styles['Normal'], fontSize=10, leading=14, alignment=1, textColor=colors.black, fontName="Helvetica-Bold")
-    ref_style = ParagraphStyle('RefStyle', parent=styles['Normal'], fontSize=9.5, leading=13, alignment=1, textColor=colors.black)
-    body_justified = ParagraphStyle('BodyJustified', parent=styles['Normal'], fontSize=9.5, leading=14, alignment=4, textColor=colors.black)
+    center_header = ParagraphStyle('CenterHeader', parent=styles['Normal'], fontSize=10, leading=14, alignment=1, fontName="Helvetica-Bold")
+    ref_style = ParagraphStyle('RefStyle', parent=styles['Normal'], fontSize=9.5, leading=13, alignment=1)
+    body_justified = ParagraphStyle('BodyJustified', parent=styles['Normal'], fontSize=9.5, leading=14, alignment=4)
     sub_title = ParagraphStyle('SubTitle', parent=styles['Normal'], fontSize=10, leading=14, fontName="Helvetica-Bold")
 
-    # Government Header
     story.append(Paragraph("<b>Circular No. 255/01/2026-GST</b>", center_header))
     story.append(Paragraph("<b>F. No. CBIC-20010/11/2026-GST</b>", ref_style))
     story.append(Paragraph("Government of India", center_header))
@@ -85,13 +88,12 @@ def build_official_gst_circular_pdf(filename, date_str):
     story.append(Paragraph(f"New Delhi, Dated the {date_str}", ParagraphStyle('RightDate', parent=styles['Normal'], alignment=2, fontSize=9.5)))
     story.append(Spacer(1, 10))
 
-    story.append(Paragraph("To,<br>The Principal Chief Commissioners / Chief Commissioners (All)<br>The Principal Director General / Director General (All)", body_justified))
+    story.append(Paragraph("To,<br/>The Principal Chief Commissioners / Chief Commissioners (All)<br/>The Principal Director General / Director General (All)", body_justified))
     story.append(Spacer(1, 10))
 
     story.append(Paragraph("<b>Subject: Clarification regarding jurisdiction in cases involving migration/transfer of taxable persons from one jurisdiction to another jurisdiction - reg.</b>", sub_title))
     story.append(Spacer(1, 8))
 
-    # Official Paragraph Sections
     story.append(Paragraph("Madam / Sir,", body_justified))
     story.append(Spacer(1, 6))
 
@@ -109,7 +111,7 @@ def build_official_gst_circular_pdf(filename, date_str):
 
     story.append(Paragraph("Yours faithfully,", ParagraphStyle('RightAlign', parent=styles['Normal'], alignment=2)))
     story.append(Spacer(1, 15))
-    story.append(Paragraph("<b>(Gaurav Singh)</b><br>Commissioner (GST)", ParagraphStyle('Sign', parent=styles['Normal'], alignment=2, fontSize=10)))
+    story.append(Paragraph("<b>(Gaurav Singh)</b><br/>Commissioner (GST)", ParagraphStyle('Sign', parent=styles['Normal'], alignment=2, fontSize=10)))
 
     doc.build(story)
 
@@ -121,9 +123,8 @@ def build_official_cbdt_notification_pdf(filename, date_str):
     styles = getSampleStyleSheet()
     story = []
 
-    center_header = ParagraphStyle('CenterHeader', parent=styles['Normal'], fontSize=10, leading=14, alignment=1, textColor=colors.black, fontName="Helvetica-Bold")
-    ref_style = ParagraphStyle('RefStyle', parent=styles['Normal'], fontSize=9.5, leading=13, alignment=1, textColor=colors.black)
-    body_justified = ParagraphStyle('BodyJustified', parent=styles['Normal'], fontSize=9.5, leading=14, alignment=4, textColor=colors.black)
+    center_header = ParagraphStyle('CenterHeader', parent=styles['Normal'], fontSize=10, leading=14, alignment=1, fontName="Helvetica-Bold")
+    body_justified = ParagraphStyle('BodyJustified', parent=styles['Normal'], fontSize=9.5, leading=14, alignment=4)
     sub_title = ParagraphStyle('SubTitle', parent=styles['Normal'], fontSize=10, leading=14, fontName="Helvetica-Bold")
 
     story.append(Paragraph("<b>NOTIFICATION NO. 18/2026 / CBDT</b>", center_header))
@@ -150,7 +151,7 @@ def build_official_cbdt_notification_pdf(filename, date_str):
     story.append(Spacer(1, 20))
 
     story.append(Paragraph("<b>[F. No. 370142/12/2026-TPL]</b>", ParagraphStyle('LeftRef', parent=styles['Normal'], fontSize=9)))
-    story.append(Paragraph("(Ravinder Maini)<br>Director (Tax Policy & Legislation)", ParagraphStyle('Sign', parent=styles['Normal'], alignment=2, fontSize=10)))
+    story.append(Paragraph("(Ravinder Maini)<br/>Director (Tax Policy & Legislation)", ParagraphStyle('Sign', parent=styles['Normal'], alignment=2, fontSize=10)))
 
     doc.build(story)
 
