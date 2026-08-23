@@ -2,18 +2,18 @@ name: Daily Tax Updates Script
 
 on:
   schedule:
-    - cron: '0 3 * * *' # UTC Time (Equivalent to 8:30 AM IST daily)
-  workflow_dispatch: # Option to run manually anytime
+    - cron: '0 3 * * *'  # Daily 8:30 AM IST
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
